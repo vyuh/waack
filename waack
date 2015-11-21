@@ -1,9 +1,6 @@
-#!/usr/bin/env perl
+#!/usr/bin/env perl -w
 
 # usage: waack <dsn> <user> <password>
-use 5.20.0;
-
-use experimental 'signatures', 'postderef';
 
 use List::AllUtils qw/ zip /;
 use SQL::Translator;
@@ -18,7 +15,7 @@ config->{engines}{JSON} = {
 set serializer => 'JSON';
 set logger => 'console';
 
-{ 
+{
     package Waack::DB;
 
     use parent 'DBIx::Class::Schema::Loader';
@@ -32,8 +29,8 @@ my $schema = Waack::DB->connect( @ARGV );
 
 # serialize ALL THE THINGS
 $_->{is_serializable} = 1
-    for map {values $_->columns_info->%* } 
-        map { $schema->source($_) } 
+    for map {values %{$_->columns_info} }
+        map { $schema->source($_) }
             $schema->sources ;
 
 get '/_tables' => sub { [ $schema->sources ] };
@@ -47,7 +44,7 @@ get '/_schema' => sub {
     );
 
     # warning SQL::Translator::Producer::HTML needs patching
-    my $output = request()->accept =~ m#text/html# ? 'HTML' : 'JSON';
+    my $output = (request()->accept||'') =~ m#text/html# ? 'HTML' : 'JSON';
 
     content_type 'application/json' if $output eq 'JSON';
 
@@ -57,11 +54,12 @@ get '/_schema' => sub {
 create_routes_for_table( $schema, $_ ) for $schema->sources;
 
 
-sub create_routes_for_table ( $schema, $table ) {
+sub create_routes_for_table {
+    my ($schema, $table) = @_;
     my @primary_key = $schema->source($table)->primary_columns;
 
     # will be /<table name>/<key 1>/<key 2>
-    my $row_url = join '/', undef, $table, ( '*' ) x @primary_key;
+    my $row_url = join '/', q//, $table, ( '*' ) x @primary_key;
 
     get "/$table" => sub {
         my @things = $schema->resultset($table)->search({ params() })->all;
@@ -71,8 +69,8 @@ sub create_routes_for_table ( $schema, $table ) {
     get "/$table/_schema" => sub {
         my $columns = clone $schema->source($table)->columns_info;
 
-        for my $c ( values $columns ) {
-            delete $c->{$_} for grep { /^_/ } keys $c;
+        for my $c ( values %{$columns} ) {
+            delete $c->{$_} for grep { /^_/ } keys %{$c};
         }
 
         return $columns;
@@ -100,6 +98,5 @@ sub create_routes_for_table ( $schema, $table ) {
     };
 
 }
-
 dance;
 
